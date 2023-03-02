@@ -104,3 +104,37 @@ memmove(void *vdst, const void *vsrc, int n)
     *dst++ = *src++;
   return vdst;
 }
+int thread_create(void(*start_routine)(void*, void*), void* arg1, void* arg2)
+{
+  void* stack = (void*)malloc(4096); //allocate a page for the stack
+  return clone(start_routine, arg1, arg2, stack);
+}
+
+//capture and free the thread stack and return its pid
+int thread_join()
+{
+  void* stack;
+  int pid = join(&stack);
+  free(stack);
+  return pid;
+}
+
+//acquire a lock when it is your turn
+void lock_acquire(lock_t* lock)
+{
+  int turn = fetch_and_add(&lock->ticket, 1);
+  while(lock->turn != turn) {}
+}
+
+//release the lock, increment the turn
+void lock_release(lock_t* lock)
+{
+  fetch_and_add(&lock->turn, 1);
+}
+
+//initialize the ticket-lock
+void lock_init(lock_t* lock)
+{
+  lock->turn = 0;
+  lock->ticket = 0;
+}

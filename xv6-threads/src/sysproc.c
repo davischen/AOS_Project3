@@ -89,3 +89,37 @@ sys_uptime(void)
   release(&tickslock);
   return xticks;
 }
+//davis add
+int
+sys_join(void)
+{
+  //get and check inputs
+  int stack;
+  if(argint(0, &stack) <0)
+    return -1;
+	
+  //call join() from proc.c
+  return join((void**)stack);
+}
+//davis add
+int
+sys_clone(void)
+{
+  //get and check inputs
+  void (*fcn)(void*, void*);
+  int arg1;
+  int arg2;
+  int stack;
+
+  if(argptr(0, (void*)&fcn, sizeof(void*)) < 0)
+    return -1;
+  else if(argint(1, &arg1) < 0)
+    return -1;
+  else if(argint(2, &arg2) < 0)
+    return -1;
+  else if(argint(3, &stack) < 0)
+    return -1;
+
+  //call clone() from proc.c
+  return clone((void*)fcn, (void*)arg1, (void*)arg2, (void*)stack);
+}

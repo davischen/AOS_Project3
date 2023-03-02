@@ -220,7 +220,101 @@ fork(void)
 
   return pid;
 }
+//davis add
+//based off fork() above
+int
+clone(void(*fcn)(void*, void*), void* arg1, void* arg2, void* stack)
+{
+  int i, pid;
+  struct proc *np;
+  struct proc *curproc = myproc();
 
+  // Allocate process.
+  if((np = allocproc()) == 0){
+    return -1;
+  }
+
+  // Copy process state from proc.
+  np->pgdir = curproc->pgdir;
+  np->sz = curproc->sz;
+  np->parent = curproc;
+  *np->tf = *curproc->tf;
+
+  // Clear %eax so that fork returns 0 in the child.
+  np->tf->eax = 0;
+  
+  // Set up thread stack (based off exec.c)
+  uint sp = (uint)stack + PGSIZE;
+  uint tstack[3];
+
+  tstack[0] = 0xFFFFFFFF; // fake return PC
+  tstack[1] = (uint)arg1;
+  tstack[2] = (uint)arg2;
+  sp = sp - (3)*4; // reduce stack pointer since we start with 3 items on the stack
+  if(copyout(np->pgdir, sp, tstack, (3)*4) < 0)
+    return -1;
+
+  np->tf->eip = (uint)fcn; 	// set instruction pointer to passed function
+  np->tf->esp = sp;		// set stack-pointer register
+  np->tstack = (char*)stack;	// set thread stack for this process
+
+  for(i = 0; i < NOFILE; i++)
+    if(curproc->ofile[i])
+      np->ofile[i] = filedup(curproc->ofile[i]);
+  np->cwd = idup(curproc->cwd);
+
+  safestrcpy(np->name, curproc->name, sizeof(curproc->name));
+
+  pid = np->pid;
+
+  acquire(&ptable.lock);
+
+  np->state = RUNNABLE;
+
+  release(&ptable.lock);
+
+  return pid;
+}
+//davis add
+int
+join(void** stack)
+{
+  struct proc *p;
+  int havekids, pid;
+  struct proc *curproc = myproc();
+  
+  acquire(&ptable.lock);
+  for(;;){
+    // Scan through table looking for exited threads.
+    havekids = 0;
+    for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
+      if(p->parent != curproc)
+        continue;
+      havekids = 1;
+      if(p->state == ZOMBIE){
+        // Found one.
+        pid = p->pid;
+	*stack = p->tstack;
+        p->pid = 0;
+        p->parent = 0;
+        p->name[0] = 0;
+        p->killed = 0;
+        p->state = UNUSED;
+        release(&ptable.lock);
+        return pid;
+      }
+    }
+
+    // No point waiting if we don't have any children.
+    if(!havekids || curproc->killed){
+      release(&ptable.lock);
+      return -1;
+    }
+
+    // Wait for children to exit.  (See wakeup1 call in proc_exit.)
+    sleep(curproc, &ptable.lock);  //DOC: wait-sleep
+  }
+}
 // Exit the current process.  Does not return.
 // An exited process remains in the zombie state
 // until its parent calls wait() to find out it exited.

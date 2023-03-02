@@ -23,6 +23,8 @@ int getpid(void);
 char* sbrk(int);
 int sleep(int);
 int uptime(void);
+int clone(void(*fcn)(void*, void*), void* arg1, void* arg2, void* stack); //davis add
+int join(void** stack);	//davis add
 
 // ulib.c
 int stat(const char*, struct stat*);
@@ -37,3 +39,8 @@ void* memset(void*, int, uint);
 void* malloc(uint);
 void free(void*);
 int atoi(const char*);
+int thread_create(void(*start_routine)(void*, void*), void* arg1, void* arg2); //davis add
+int thread_join(void);		//davis add
+void lock_acquire(lock_t*);	//davis add
+void lock_release(lock_t*);	//davis add
+void lock_init(lock_t*);	//davis add
