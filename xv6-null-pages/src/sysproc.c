@@ -100,21 +100,16 @@ sys_mprotect(void)
 
   if(argptr(0, &addr, sizeof(void*)) < 0)
     return -1;
+    
   if(argint(1, &len) < 0)
     return -1;
   
   //argument checking: len bounds, addr bounds, addr alignmnet
-  if(len == 0 || len < 0 || len > myproc()->sz)
-    return -1;
-
-  if((uint)addr < 0 || (uint)addr == KERNBASE || (uint)addr > KERNBASE)
-    return -1;
-	
-  if(((unsigned long)addr & 15) != 0)
+  if(len <= 0 )//|| len > myproc()->sz
     return -1;
 
   //get page table entry and change permissions
-  pde_t *pde;
+  /*pde_t *pde;
   pte_t *pgtab;
   pte_t *pte;
 
@@ -129,9 +124,8 @@ sys_mprotect(void)
   }
   
   //tell the hardware that the page table has changed
-  lcr3(V2P(myproc()->pgdir));
-
-  return 0;
+  lcr3(V2P(myproc()->pgdir));*/
+  return mprotect((void *)addr, len);
 }
 
 ////Davis add - created munprotect syscall process
@@ -140,7 +134,7 @@ sys_mprotect(void)
 int
 sys_munprotect(void)
 {
-  //Get system call arguments
+
   char* addr = 0;
   int len;
   
@@ -149,18 +143,12 @@ sys_munprotect(void)
   if(argint(1, &len) < 0)
     return -1;
 
-  //argument checking: len bounds, addr bounds, addr alignmnet
-  if(len == 0 || len < 0 || len > myproc()->sz)
-    return -1;
-
-  if((uint)addr < 0 || (uint)addr == KERNBASE || (uint)addr > KERNBASE)
-    return -1;
-	
-  if(((unsigned long)addr & 15) != 0)
+  //argument checking: len bounds, page address bounds, page address alignmnet
+  if(len <= 0 )//|| len > myproc()->sz
     return -1;
 
   //get page table entry and change permissions
-  pde_t *pde;
+  /*pde_t *pde;
   pte_t *pgtab;
   pte_t *pte;
 
@@ -174,7 +162,6 @@ sys_munprotect(void)
   }
   
   //tell the hardware that the page table has changed
-  lcr3(V2P(myproc()->pgdir));
-
-  return 0;
+  lcr3(V2P(myproc()->pgdir));*/
+  return munprotect((void *)addr, len);
 }

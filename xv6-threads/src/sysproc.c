@@ -111,13 +111,7 @@ sys_clone(void)
   int arg2;
   int stack;
 
-  if(argptr(0, (void*)&fcn, sizeof(void*)) < 0)
-    return -1;
-  else if(argint(1, &arg1) < 0)
-    return -1;
-  else if(argint(2, &arg2) < 0)
-    return -1;
-  else if(argint(3, &stack) < 0)
+  if(argptr(0, (void*)&fcn, sizeof(void*)) < 0 || argint(1, &arg1) < 0 || argint(2, &arg2) < 0 || argint(3, &stack) < 0)
     return -1;
 
   //call clone() from proc.c

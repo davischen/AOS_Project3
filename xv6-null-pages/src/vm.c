@@ -393,4 +393,110 @@ copyout(pde_t *pgdir, uint va, void *p, uint len)
 // Blank page.
 //PAGEBREAK!
 // Blank page.
+int
+mprotect(void *addr, int len)
+{
+  if((uint)addr < 0 || (uint)addr == KERNBASE || (uint)addr > KERNBASE)
+    return -1;
+	
+  if(((unsigned long)addr % PGSIZE) != 0)
+    return -1;
 
+  pte_t *pte;
+  //For loop to iterate through the pages in the range starting at addr to len pages (len*pgsize)
+  for (int i = 0; i < ((int) len * PGSIZE); i += PGSIZE) {
+    //Return the address of the PTE in page table pgdir
+    if((pte = walkpgdir(myproc()->pgdir, addr+i, 0)) == 0)
+    {
+      return 0;
+    }
+    //set read only
+    if(pte && ((*pte & PTE_W) != 0) && ((*pte & PTE_P) != 0) ){
+      *pte &= ~PTE_W;
+      //cprintf("Page table entry after: 0x%x\n", *pte);
+    }
+    else{
+      return 0;
+    }
+  }
+  //Return the address of the PTE in page table pgdir
+  
+  /*pte_t *pgtab;
+  pde_t *pde;
+  pde = &(myproc()->pgdir)[PDX(addr)];
+  pgtab = (pte_t*)P2V(PTE_ADDR(*pde));
+
+  // change protection bits for "len" pages
+  for(int i = 0; i < len; i++)
+  {
+    if((pte = &pgtab[PTX(addr + i)])==0)
+    {
+      return 0;
+    }
+    if(pte && ((*pte & PTE_U) != 0) && ((*pte & PTE_P) != 0) ){
+      *pte &= ~PTE_W;
+    }
+    else{
+      return -1;
+    }
+  }*/
+  // Reload CR3 to flush TLB
+  //switch to new page table (TLB)
+  lcr3(V2P(myproc()->pgdir));  
+  return 0;
+}
+
+int
+munprotect(void *addr, int len)
+{
+  if((uint)addr < 0 || (uint)addr == KERNBASE || (uint)addr > KERNBASE)
+    return -1;
+
+	//// Is addr page-aligned?
+  if(((unsigned long)addr % PGSIZE) != 0)
+    return -1;
+
+  pte_t *pte;
+  //For loop to iterate through the pages in the range starting at addr to len pages (len*pgsize)
+  for (int i = 0; i < ((int) len * PGSIZE); i += PGSIZE) {
+    //Return the address of the PTE in page table pgdir
+    if((pte = walkpgdir(myproc()->pgdir, addr+i, 0)) == 0)
+    {
+      return 0;
+    }
+    //sets the region back to writeable and readable
+    if(pte && ((*pte & PTE_U) != 0) && ((*pte & PTE_P) != 0) ){
+      *pte |= PTE_W;
+      //cprintf("Page table entry after: 0x%x\n", *pte);
+    }
+    else{
+      return 0;
+    }
+  }
+  //Return the address of the PTE in page table pgdir
+  
+  /*pde_t *pde;
+  pte_t *pgtab;
+  pde = &(myproc()->pgdir)[PDX(addr)];
+  pgtab = (pte_t*)P2V(PTE_ADDR(*pde));
+
+  for(int i = 0; i < len; i++)
+  {
+    if((pte = &pgtab[PTX(addr + i)])==0)
+    {
+      return 0;
+    }
+    if(pte && ((*pte & PTE_U) != 0) && ((*pte & PTE_P) != 0) ){
+      *pte |= PTE_W;
+    }
+    else{
+      return -1;
+    }
+  }*/
+  
+  // Return true if all pages were successfully set to read only & flush the TLB
+  // Reload CR3 to flush TLB
+  //switch to new page table (TLB)
+  lcr3(V2P(myproc()->pgdir));  
+  return 0;
+}

@@ -33,6 +33,7 @@ struct context {
 };
 
 enum procstate { UNUSED, EMBRYO, SLEEPING, RUNNABLE, RUNNING, ZOMBIE };
+enum threadstate { STOPED, ONGOING };
 
 // Per-process state
 struct proc {
@@ -41,6 +42,7 @@ struct proc {
   char *kstack;                // Bottom of kernel stack for this process
   char *tstack;                // Bottom of thread stack for this process davis add
   enum procstate state;        // Process state
+  enum threadstate tstate;        // Process state
   int pid;                     // Process ID
   struct proc *parent;         // Parent process
   struct trapframe *tf;        // Trap frame for current syscall
