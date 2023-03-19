@@ -1,3 +1,4 @@
+
 #include "param.h"
 #include "types.h"
 #include "stat.h"
@@ -5,21 +6,47 @@
 #include "fs.h"
 #include "fcntl.h"
 #include "syscall.h"
-#include "traps.h"
-#include "memlayout.h"
 
-/*testing whether munprotect undoes the action of mprotect*/
+lock_t mylock;
+int global;
+
+void threadfunc(void *arg1, void *arg2) {
+  for (int i = 0; i < 2000; i++) {
+    lock_acquire(&mylock);
+    global++;
+    lock_release(&mylock);
+  }
+  exit();
+}
+
+void threadfunc2(void *arg1, void *arg2) {
+  for (int i = 0; i < 1000; i++) {
+    lock_acquire(&mylock);
+    global--;
+    lock_release(&mylock);
+  }
+  exit();
+}
+
+void threadfunc3(void *arg1, void *arg2) {
+  for (int i = 0; i < 1000; i++) {
+    lock_acquire(&mylock);
+    global--;
+    lock_release(&mylock);
+  }
+  exit();
+}
+
 int main(int argc, char *argv[])
 {
-    int ret = mprotect((void*)4096, 1);
-    printf(1, "XV6_TEST_OUTPUT: Return value of mprotect : %d\n", ret);
+  lock_init(&mylock);
+  thread_create(threadfunc, (void*)0x123, (void *)0x456);
+  thread_create(threadfunc2, (void*)0xaaa, (void *)0xbbb);
+  thread_create(threadfunc3, (void*)0xccc, (void *)0xddd);
+  thread_join();
+  thread_join();  
+  thread_join();
 
-    ret = munprotect((void*)4096, 1);
-    printf(1, "XV6_TEST_OUTPUT: Return value of munprotect : %d\n", ret);
-
-    *(char**)0x1000 = "this should not cause a pagefault";
-
-    printf(1, "XV6_TEST_OUTPUT: Written to 0x1000\n");
-
-    exit();
+  printf(1, "XV6_TEST_OUTPUT %d\n", global);
+  exit();
 }

@@ -104,33 +104,14 @@ sys_mprotect(void)
   if(argint(1, &len) < 0)
     return -1;
   
-  //argument checking: len bounds, addr bounds, addr alignmnet
+  //parameters checking
   if(len <= 0 )//|| len > myproc()->sz
     return -1;
 
-  //get page table entry and change permissions
-  /*pde_t *pde;
-  pte_t *pgtab;
-  pte_t *pte;
-
-  pde = &(myproc()->pgdir)[PDX(addr)];
-  pgtab = (pte_t*)P2V(PTE_ADDR(*pde));
-
-  // change protection bits for "len" pages
-  for(int i = 0; i < len; i++)
-  {
-    pte = &pgtab[PTX(addr + i)];
-    *pte &= ~PTE_W;
-  }
-  
-  //tell the hardware that the page table has changed
-  lcr3(V2P(myproc()->pgdir));*/
   return mprotect((void *)addr, len);
 }
 
 ////Davis add - created munprotect syscall process
-//This system call will take address and grant user
-//Write permissions for it and len pages after it
 int
 sys_munprotect(void)
 {
@@ -143,25 +124,9 @@ sys_munprotect(void)
   if(argint(1, &len) < 0)
     return -1;
 
-  //argument checking: len bounds, page address bounds, page address alignmnet
+  //parameter checking
   if(len <= 0 )//|| len > myproc()->sz
     return -1;
 
-  //get page table entry and change permissions
-  /*pde_t *pde;
-  pte_t *pgtab;
-  pte_t *pte;
-
-  pde = &(myproc()->pgdir)[PDX(addr)];
-  pgtab = (pte_t*)P2V(PTE_ADDR(*pde));
-
-  for(int i = 0; i < len; i++)
-  {
-    pte = &pgtab[PTX(addr + i)];
-    *pte |= PTE_W;
-  }
-  
-  //tell the hardware that the page table has changed
-  lcr3(V2P(myproc()->pgdir));*/
   return munprotect((void *)addr, len);
 }

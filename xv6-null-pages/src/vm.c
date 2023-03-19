@@ -405,8 +405,10 @@ mprotect(void *addr, int len)
   pte_t *pte;
   //For loop to iterate through the pages in the range starting at addr to len pages (len*pgsize)
   for (int i = 0; i < ((int) len * PGSIZE); i += PGSIZE) {
+    //convert an address in the middle of a page to an address at the beginning of the page.
+    uint base_addr = PGROUNDDOWN((uint)addr+i);
     //Return the address of the PTE in page table pgdir
-    if((pte = walkpgdir(myproc()->pgdir, addr+i, 0)) == 0)
+    if((pte = walkpgdir(myproc()->pgdir, (void *)base_addr, 0)) == 0)
     {
       return 0;
     }
@@ -420,28 +422,7 @@ mprotect(void *addr, int len)
     }
   }
   //Return the address of the PTE in page table pgdir
-  
-  /*pte_t *pgtab;
-  pde_t *pde;
-  pde = &(myproc()->pgdir)[PDX(addr)];
-  pgtab = (pte_t*)P2V(PTE_ADDR(*pde));
-
-  // change protection bits for "len" pages
-  for(int i = 0; i < len; i++)
-  {
-    if((pte = &pgtab[PTX(addr + i)])==0)
-    {
-      return 0;
-    }
-    if(pte && ((*pte & PTE_U) != 0) && ((*pte & PTE_P) != 0) ){
-      *pte &= ~PTE_W;
-    }
-    else{
-      return -1;
-    }
-  }*/
-  // Reload CR3 to flush TLB
-  //switch to new page table (TLB)
+  // reloading the page table base register CR3 
   lcr3(V2P(myproc()->pgdir));  
   return 0;
 }
@@ -459,8 +440,10 @@ munprotect(void *addr, int len)
   pte_t *pte;
   //For loop to iterate through the pages in the range starting at addr to len pages (len*pgsize)
   for (int i = 0; i < ((int) len * PGSIZE); i += PGSIZE) {
+    //convert an address in the middle of a page to an address at the beginning of the page.
+    uint base_addr = PGROUNDDOWN((uint)addr+i);
     //Return the address of the PTE in page table pgdir
-    if((pte = walkpgdir(myproc()->pgdir, addr+i, 0)) == 0)
+    if((pte = walkpgdir(myproc()->pgdir, (void *)base_addr, 0)) == 0)
     {
       return 0;
     }
@@ -474,29 +457,7 @@ munprotect(void *addr, int len)
     }
   }
   //Return the address of the PTE in page table pgdir
-  
-  /*pde_t *pde;
-  pte_t *pgtab;
-  pde = &(myproc()->pgdir)[PDX(addr)];
-  pgtab = (pte_t*)P2V(PTE_ADDR(*pde));
-
-  for(int i = 0; i < len; i++)
-  {
-    if((pte = &pgtab[PTX(addr + i)])==0)
-    {
-      return 0;
-    }
-    if(pte && ((*pte & PTE_U) != 0) && ((*pte & PTE_P) != 0) ){
-      *pte |= PTE_W;
-    }
-    else{
-      return -1;
-    }
-  }*/
-  
-  // Return true if all pages were successfully set to read only & flush the TLB
-  // Reload CR3 to flush TLB
-  //switch to new page table (TLB)
+  // reloading the page table base register CR3 
   lcr3(V2P(myproc()->pgdir));  
   return 0;
 }

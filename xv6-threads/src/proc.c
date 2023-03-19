@@ -221,7 +221,7 @@ fork(void)
   return pid;
 }
 //davis add
-//based off fork() above
+//reference fork() above
 int
 clone(void(*fcn)(void*, void*), void* arg1, void* arg2, void* stack)
 {
@@ -240,25 +240,25 @@ clone(void(*fcn)(void*, void*), void* arg1, void* arg2, void* stack)
   np->parent = curproc;
   *np->tf = *curproc->tf;
 
-  // Clear %eax so that fork returns 0 in the child.
+  //To do clean
+  //For fork to returns 0 in the child.
   np->tf->eax = 0;
 
   //=========================
-  // Set up thread stack (based off exec.c)
   //sp = sp - (3)*4; // reduce stack pointer since we start with 3 items on the stack
   uint sp = (uint)stack + PGSIZE- (3)*sizeof(uint);
   uint thread_stack[3];
 
-  thread_stack[0] = 0xFFFFFFFF; // fake return PC
+  thread_stack[0] = 0xFFFFFFFF; 
   thread_stack[1] = (uint)arg1;
   thread_stack[2] = (uint)arg2;
   //copy user stack
   if(copyout(np->pgdir, sp, thread_stack, (3)*sizeof(uint)) < 0)
     return -1;
 
-  np->tf->eip = (uint)fcn; 	// set instruction pointer to passed function
-  np->tf->esp = sp;		// set stack-pointer register
-  np->tstack = (char*)stack;	// set thread stack for this process
+  np->tf->eip = (uint)fcn; 	// set instruction pointer
+  np->tf->esp = sp;		// set stack pointer register
+  np->tstack = (char*)stack;	// set user thread stack for this process
   np->tstate = ONGOING;
   //==========================
 
@@ -272,7 +272,7 @@ clone(void(*fcn)(void*, void*), void* arg1, void* arg2, void* stack)
   pid = np->pid;
 
   acquire(&ptable.lock);
-
+  //make thread is running status
   np->state = RUNNABLE;
 
   release(&ptable.lock);
@@ -289,18 +289,18 @@ join(void** stack)
   
   acquire(&ptable.lock);
   for(;;){
-    // Scan through table looking for exited threads.
+    //search and look for exited threads through table
     havekids = 0;
     for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
+      //current processes or thread status is stopped
       if(p->parent != curproc || p->tstate == STOPED)
         continue;
       havekids = 1;
       if(p->state == ZOMBIE){
-        // Remove thread from the kernel stack
+        // Remove thread stack from the kernel stack
         kfree(p->kstack);
         p->kstack = 0;
-        
-        // Found one.
+        //return user stack 
         pid = p->pid;
 	      *stack = p->tstack;
         p->pid = 0;
@@ -320,8 +320,8 @@ join(void** stack)
       return -1;
     }
 
-    // Wait for children to exit.  (See wakeup1 call in proc_exit.)
-    sleep(curproc, &ptable.lock);  //DOC: wait-sleep
+    // Wait for children to exit.
+    sleep(curproc, &ptable.lock);
   }
 }
 // Exit the current process.  Does not return.
