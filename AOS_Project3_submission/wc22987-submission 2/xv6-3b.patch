@@ -1,0 +1,429 @@
+diff -ruN src/Makefile src-finished/Makefile
+--- src/Makefile	2022-07-08 08:33:36.000000000 +0800
++++ src-finished/Makefile	2023-03-19 12:06:51.000000000 +0800
+@@ -169,6 +169,7 @@
+ 	_cat\
+ 	_echo\
+ 	_forktest\
++	_test_9\
+ 	_grep\
+ 	_init\
+ 	_kill\
+@@ -248,7 +249,7 @@
+ # check in that version.
+ 
+ EXTRA=\
+-	mkfs.c ulib.c user.h cat.c echo.c forktest.c grep.c kill.c\
++	mkfs.c test_9.c ulib.c user.h cat.c echo.c forktest.c grep.c kill.c\
+ 	ln.c ls.c mkdir.c rm.c stressfs.c usertests.c wc.c zombie.c\
+ 	printf.c umalloc.c\
+ 	README dot-bochsrc *.pl toc.* runoff runoff1 runoff.list\
+diff -ruN src/Makefile.test src-finished/Makefile.test
+--- src/Makefile.test	2022-07-08 08:33:36.000000000 +0800
++++ src-finished/Makefile.test	2023-03-19 12:06:51.000000000 +0800
+@@ -169,6 +169,7 @@
+ 	_cat\
+ 	_echo\
+ 	_forktest\
++	_test_9\
+ 	_grep\
+ 	_init\
+ 	_kill\
+@@ -256,7 +257,7 @@
+ # check in that version.
+ 
+ EXTRA=\
+-	mkfs.c ulib.c user.h cat.c echo.c forktest.c grep.c kill.c\
++	mkfs.c test_9.c ulib.c user.h cat.c echo.c forktest.c grep.c kill.c\
+ 	ln.c ls.c mkdir.c rm.c stressfs.c usertests.c wc.c zombie.c\
+ 	printf.c umalloc.c\
+ 	README dot-bochsrc *.pl toc.* runoff runoff1 runoff.list\
+diff -ruN src/defs.h src-finished/defs.h
+--- src/defs.h	2022-07-08 08:33:36.000000000 +0800
++++ src-finished/defs.h	2023-03-19 12:06:51.000000000 +0800
+@@ -120,6 +120,8 @@
+ int             wait(void);
+ void            wakeup(void*);
+ void            yield(void);
++int		        clone(void(*fcn)(void*, void*), void*, void*, void*);	//davis add
++int		        join(void**);	//davis add
+ 
+ // swtch.S
+ void            swtch(struct context**, struct context*);
+diff -ruN src/proc.c src-finished/proc.c
+--- src/proc.c	2022-07-08 08:33:36.000000000 +0800
++++ src-finished/proc.c	2023-03-19 12:06:51.000000000 +0800
+@@ -220,7 +220,110 @@
+ 
+   return pid;
+ }
++//davis add
++//reference fork() above
++int
++clone(void(*fcn)(void*, void*), void* arg1, void* arg2, void* stack)
++{
++  int i, pid;
++  struct proc *np;
++  struct proc *curproc = myproc();
++
++  // Allocate process.
++  if((np = allocproc()) == 0){
++    return -1;
++  }
++
++  // Copy process state from proc.
++  np->pgdir = curproc->pgdir;
++  np->sz = curproc->sz;
++  np->parent = curproc;
++  *np->tf = *curproc->tf;
++
++  //To do clean
++  //For fork to returns 0 in the child.
++  np->tf->eax = 0;
++
++  //=========================
++  //sp = sp - (3)*4; // reduce stack pointer since we start with 3 items on the stack
++  uint sp = (uint)stack + PGSIZE- (3)*sizeof(uint);
++  uint thread_stack[3];
++
++  thread_stack[0] = 0xFFFFFFFF; 
++  thread_stack[1] = (uint)arg1;
++  thread_stack[2] = (uint)arg2;
++  //copy user stack
++  if(copyout(np->pgdir, sp, thread_stack, (3)*sizeof(uint)) < 0)
++    return -1;
++
++  np->tf->eip = (uint)fcn; 	// set instruction pointer
++  np->tf->esp = sp;		// set stack pointer register
++  np->tstack = (char*)stack;	// set user thread stack for this process
++  np->tstate = ONGOING;
++  //==========================
++
++  for(i = 0; i < NOFILE; i++)
++    if(curproc->ofile[i])
++      np->ofile[i] = filedup(curproc->ofile[i]);
++  np->cwd = idup(curproc->cwd);
++  //commit user stack
++  safestrcpy(np->name, curproc->name, sizeof(curproc->name));
+ 
++  pid = np->pid;
++
++  acquire(&ptable.lock);
++  //make thread is running status
++  np->state = RUNNABLE;
++
++  release(&ptable.lock);
++
++  return pid;
++}
++//davis add, copy from wait
++int
++join(void** stack)
++{
++  struct proc *p;
++  int havekids, pid;
++  struct proc *curproc = myproc();
++  
++  acquire(&ptable.lock);
++  for(;;){
++    //search and look for exited threads through table
++    havekids = 0;
++    for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
++      //current processes or thread status is stopped
++      if(p->parent != curproc || p->tstate == STOPED)
++        continue;
++      havekids = 1;
++      if(p->state == ZOMBIE){
++        // Remove thread stack from the kernel stack
++        kfree(p->kstack);
++        p->kstack = 0;
++        //return user stack 
++        pid = p->pid;
++	      *stack = p->tstack;
++        p->pid = 0;
++        p->parent = 0;
++        p->name[0] = 0;
++        p->killed = 0;
++        p->state = UNUSED;
++        p->tstate = STOPED;
++        release(&ptable.lock);
++        return pid;
++      }
++    }
++
++    // No point waiting if we don't have any children.
++    if(!havekids || curproc->killed){
++      release(&ptable.lock);
++      return -1;
++    }
++
++    // Wait for children to exit.
++    sleep(curproc, &ptable.lock);
++  }
++}
+ // Exit the current process.  Does not return.
+ // An exited process remains in the zombie state
+ // until its parent calls wait() to find out it exited.
+diff -ruN src/proc.h src-finished/proc.h
+--- src/proc.h	2022-07-08 08:33:36.000000000 +0800
++++ src-finished/proc.h	2023-03-19 12:06:51.000000000 +0800
+@@ -33,13 +33,16 @@
+ };
+ 
+ enum procstate { UNUSED, EMBRYO, SLEEPING, RUNNABLE, RUNNING, ZOMBIE };
++enum threadstate { STOPED, ONGOING };
+ 
+ // Per-process state
+ struct proc {
+   uint sz;                     // Size of process memory (bytes)
+   pde_t* pgdir;                // Page table
+   char *kstack;                // Bottom of kernel stack for this process
++  char *tstack;                // Bottom of thread stack for this process davis add
+   enum procstate state;        // Process state
++  enum threadstate tstate;        // Process state
+   int pid;                     // Process ID
+   struct proc *parent;         // Parent process
+   struct trapframe *tf;        // Trap frame for current syscall
+diff -ruN src/syscall.c src-finished/syscall.c
+--- src/syscall.c	2022-07-08 08:33:36.000000000 +0800
++++ src-finished/syscall.c	2023-03-19 12:06:51.000000000 +0800
+@@ -103,6 +103,8 @@
+ extern int sys_wait(void);
+ extern int sys_write(void);
+ extern int sys_uptime(void);
++extern int sys_clone(void);	//davis add
++extern int sys_join(void); //davis add
+ 
+ static int (*syscalls[])(void) = {
+ [SYS_fork]    sys_fork,
+@@ -126,6 +128,8 @@
+ [SYS_link]    sys_link,
+ [SYS_mkdir]   sys_mkdir,
+ [SYS_close]   sys_close,
++[SYS_clone]   sys_clone,	//davis add
++[SYS_join]    sys_join,	//davis add
+ };
+ 
+ void
+diff -ruN src/syscall.h src-finished/syscall.h
+--- src/syscall.h	2022-07-08 08:33:36.000000000 +0800
++++ src-finished/syscall.h	2023-03-19 12:06:51.000000000 +0800
+@@ -20,3 +20,5 @@
+ #define SYS_link   19
+ #define SYS_mkdir  20
+ #define SYS_close  21
++#define SYS_clone  22	//davis add
++#define SYS_join   23	//davis add
+\ No newline at end of file
+diff -ruN src/sysproc.c src-finished/sysproc.c
+--- src/sysproc.c	2022-07-08 08:33:36.000000000 +0800
++++ src-finished/sysproc.c	2023-03-19 12:06:51.000000000 +0800
+@@ -89,3 +89,31 @@
+   release(&tickslock);
+   return xticks;
+ }
++//davis add
++int
++sys_join(void)
++{
++  //get and check inputs
++  int stack;
++  if(argint(0, &stack) <0)
++    return -1;
++	
++  //call join() from proc.c
++  return join((void**)stack);
++}
++//davis add
++int
++sys_clone(void)
++{
++  //get and check inputs
++  void (*fcn)(void*, void*);
++  int arg1;
++  int arg2;
++  int stack;
++
++  if(argptr(0, (void*)&fcn, sizeof(void*)) < 0 || argint(1, &arg1) < 0 || argint(2, &arg2) < 0 || argint(3, &stack) < 0)
++    return -1;
++
++  //call clone() from proc.c
++  return clone((void*)fcn, (void*)arg1, (void*)arg2, (void*)stack);
++}
+\ No newline at end of file
+diff -ruN src/test_6.c src-finished/test_6.c
+--- src/test_6.c	2022-07-08 08:33:38.000000000 +0800
++++ src-finished/test_6.c	2023-03-02 21:32:10.000000000 +0800
+@@ -20,8 +20,6 @@
+ /*testing clone() and join() system call with a simple thread function.*/
+ int main(int argc, char *argv[])
+ {
+-  lock_init(&mylock);
+-
+   int i = 0;
+   printf(1, "XV6_TEST_OUTPUT : i before threadfunc = %x\n", i);
+ 
+diff -ruN src/test_9.c src-finished/test_9.c
+--- src/test_9.c	1970-01-01 08:00:00.000000000 +0800
++++ src-finished/test_9.c	2023-03-19 12:06:51.000000000 +0800
+@@ -0,0 +1,52 @@
++
++#include "param.h"
++#include "types.h"
++#include "stat.h"
++#include "user.h"
++#include "fs.h"
++#include "fcntl.h"
++#include "syscall.h"
++
++lock_t mylock;
++int global;
++
++void threadfunc(void *arg1, void *arg2) {
++  for (int i = 0; i < 2000; i++) {
++    lock_acquire(&mylock);
++    global++;
++    lock_release(&mylock);
++  }
++  exit();
++}
++
++void threadfunc2(void *arg1, void *arg2) {
++  for (int i = 0; i < 1000; i++) {
++    lock_acquire(&mylock);
++    global--;
++    lock_release(&mylock);
++  }
++  exit();
++}
++
++void threadfunc3(void *arg1, void *arg2) {
++  for (int i = 0; i < 1000; i++) {
++    lock_acquire(&mylock);
++    global--;
++    lock_release(&mylock);
++  }
++  exit();
++}
++
++int main(int argc, char *argv[])
++{
++  lock_init(&mylock);
++  thread_create(threadfunc, (void*)0x123, (void *)0x456);
++  thread_create(threadfunc2, (void*)0xaaa, (void *)0xbbb);
++  thread_create(threadfunc3, (void*)0xccc, (void *)0xddd);
++  thread_join();
++  thread_join();  
++  thread_join();
++
++  printf(1, "XV6_TEST_OUTPUT %d\n", global);
++  exit();
++}
+diff -ruN src/types.h src-finished/types.h
+--- src/types.h	2022-07-08 08:33:36.000000000 +0800
++++ src-finished/types.h	2023-03-19 12:06:51.000000000 +0800
+@@ -2,3 +2,8 @@
+ typedef unsigned short ushort;
+ typedef unsigned char  uchar;
+ typedef uint pde_t;
++typedef struct	//davis add
++{
++  int ticket;
++  int turn;
++} lock_t;
+\ No newline at end of file
+diff -ruN src/ulib.c src-finished/ulib.c
+--- src/ulib.c	2022-07-08 08:33:36.000000000 +0800
++++ src-finished/ulib.c	2023-03-19 12:22:07.000000000 +0800
+@@ -104,3 +104,38 @@
+     *dst++ = *src++;
+   return vdst;
+ }
++//davis add
++int thread_create(void(*start_routine)(void*, void*), void* arg1, void* arg2)
++{
++  void* stack = (void*)malloc(4096); //allocate a page for the stack
++  return clone(start_routine, arg1, arg2, stack);
++}
++//davis add
++//capture and free the thread stack and return its pid
++int thread_join()
++{
++  void* stack;
++  int pid = join(&stack);
++  free(stack);
++  return pid;
++}
++
++//acquire a lock //davis add
++void lock_acquire(lock_t* lock)
++{
++  int turn = fetch_and_add(&lock->ticket, 1);
++  while(lock->turn != turn) {}
++}
++
++//release the lock //davis add
++void lock_release(lock_t* lock)
++{
++  fetch_and_add(&lock->turn, 1);
++}
++
++//initialize the lock ticket //davis add
++void lock_init(lock_t* lock)
++{
++  lock->turn = 0;
++  lock->ticket = 0;
++}
+\ No newline at end of file
+diff -ruN src/user.h src-finished/user.h
+--- src/user.h	2022-07-08 08:33:36.000000000 +0800
++++ src-finished/user.h	2023-03-19 12:06:51.000000000 +0800
+@@ -23,6 +23,8 @@
+ char* sbrk(int);
+ int sleep(int);
+ int uptime(void);
++int clone(void(*fcn)(void*, void*), void* arg1, void* arg2, void* stack); //davis add
++int join(void** stack);	//davis add
+ 
+ // ulib.c
+ int stat(const char*, struct stat*);
+@@ -37,3 +39,8 @@
+ void* malloc(uint);
+ void free(void*);
+ int atoi(const char*);
++int thread_create(void(*start_routine)(void*, void*), void* arg1, void* arg2); //davis add
++int thread_join(void);		//davis add
++void lock_acquire(lock_t*);	//davis add
++void lock_release(lock_t*);	//davis add
++void lock_init(lock_t*);	//davis add
+\ No newline at end of file
+diff -ruN src/usys.S src-finished/usys.S
+--- src/usys.S	2022-07-08 08:33:36.000000000 +0800
++++ src-finished/usys.S	2023-03-19 12:06:51.000000000 +0800
+@@ -29,3 +29,5 @@
+ SYSCALL(sbrk)
+ SYSCALL(sleep)
+ SYSCALL(uptime)
++SYSCALL(clone)		//davis add
++SYSCALL(join)	    //davis add
+\ No newline at end of file
+diff -ruN src/x86.h src-finished/x86.h
+--- src/x86.h	2022-07-08 08:33:36.000000000 +0800
++++ src-finished/x86.h	2023-03-19 12:06:51.000000000 +0800
+@@ -1,5 +1,16 @@
+ // Routines to let C code use special x86 instructions.
+ 
++//davis add
++static inline int 
++fetch_and_add(int* variable, int value)
++{
++  asm volatile("lock; xaddl %0, %1"
++    : "+r" (value), "+m" (*variable) // input+output
++    : // no input-only
++    : "memory");
++  return value;
++}
++
+ static inline uchar
+ inb(ushort port)
+ {
